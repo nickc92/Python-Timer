@@ -23,7 +23,7 @@ class Timer:
         self.waitTime = 1.0E9        
         self.taskList = []
         self.runEvent = False
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.wakeEvent = threading.Event()
         self.runThread = threading.Thread(target=self.execThread)
         self.runThread.setDaemon(True)
@@ -33,27 +33,30 @@ class Timer:
     def execThread(self):
         while True:
             self.wakeEvent.wait(self.waitTime)
-            self.lock.acquire()
-            self.taskList.sort(lambda x, y: cmp(x.nextRunTime, y.nextRunTime))
+            self.wakeEvent.clear()
+            try:
+                self.lock.acquire()                
+                self.taskList.sort(lambda x, y: cmp(x.nextRunTime, y.nextRunTime))
 
-            tNow = time.time()
-            
-            if len(self.taskList) > 0 and tNow >= self.taskList[0].nextRunTime - 0.001:
-                task = self.taskList[0]
-                task.run()
-                if task.isPeriodic:
-                    task.nextRunTime += task.periodSecs
-                    self.taskList.sort(lambda x, y: cmp(x.nextRunTime, y.nextRunTime))
+                tNow = time.time()
+
+                if len(self.taskList) > 0 and tNow >= self.taskList[0].nextRunTime - 0.001:
+                    task = self.taskList[0]
+                    task.run()
+                    if task.isPeriodic:
+                        task.nextRunTime += task.periodSecs
+                        self.taskList.sort(lambda x, y: cmp(x.nextRunTime, y.nextRunTime))
+                    else:
+                        self.taskList = self.taskList[1:]
+
+                if len(self.taskList) > 0:
+                    self.waitTime = self.taskList[0].nextRunTime - tNow
+                    if self.waitTime < 0.0: self.waitTime = 0.0
                 else:
-                    self.taskList = self.taskList[1:]
+                    self.waitTime = 1.0E9
 
-            if len(self.taskList) > 0:
-                self.waitTime = self.taskList[0].nextRunTime - tNow
-                if self.waitTime < 0.0: self.waitTime = 0.0
-            else:
-                self.waitTime = 1.0E9
-                
-            self.lock.release()
+            finally:
+                self.lock.release()
 
 
     def cancelTask(self, task):
